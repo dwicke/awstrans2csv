@@ -8,7 +8,6 @@ from os import path
 
 
 
-MAX_SECS = 10
 
 def convertToTSV(jsonFile):
     with open(jsonFile) as f:
@@ -16,20 +15,20 @@ def convertToTSV(jsonFile):
         return a
 
 
-def shouldAdd(file_size, label, time_ms):
+def shouldAdd(args, file_size, label, time_ms):
     if file_size == -1:
         # Excluding samples that failed upon conversion
         return False
     elif label is None:
         # Excluding samples that failed on label validation
         return False
-    elif int(time_ms *1000/10/2) < len(str(label)):
+    elif int(time_ms /10/2) < len(str(label)):
         # Excluding samples that are too short to fit the transcript
-        # print(f'too short {time_ms /1000.0}')
+        # print(f'too short {time_ms /1000.0} with label {label}')
         return False
-    elif time_ms / 1000 > MAX_SECS:
+    elif time_ms / 1000 > args.MAX_SECS:
         # Excluding very long samples to keep a reasonable batch-size
-        # print(f'too long {time_ms /1000}')
+        # print(f'too long {time_ms /1000} with label {label}')
         return False
     else:
         # This one is good - keep it for the target CSV
@@ -40,7 +39,7 @@ def main(args):
     a = convertToTSV(args.jsonIn)
     audio = AudioSegment.from_mp3(args.audioIn)
     # create the same structure as the example tsv except client id
-    tsvOut = {'wav_filename':[], 'wav_filesize':[], 'transcript':[]}
+    tsvOut = {'wav_filename':[], 'wav_filesize':[], 'transcript':[], 'time':[]}
 
     startTimeMS = -1 # -1 indicates we need the start index
     endTimeMS = -1
@@ -63,14 +62,15 @@ def main(args):
             else:
                 transcript = transcript + items[endIndex]['content']
 
+            if 'end_time' in items[endIndex]:
+                # always update
+                endTimeMS = 1000*float(items[endIndex]['end_time'])
+            
             # get the first index
             if startTimeMS == -1 and 'start_time' in items[endIndex]:
                 startTimeMS = 1000*float(items[endIndex]['start_time'])
                 continue
 
-            if 'end_time' in items[endIndex]:
-                # always update
-                endTimeMS = 1000*float(items[endIndex]['end_time'])
 
             if 'end_time' not in items[endIndex] and endTimeMS != -1 and startTimeMS != -1:
                 # then we reached end of a sentence
@@ -80,15 +80,16 @@ def main(args):
                 audioSeg.export(f'{args.audio_dir}{os.sep}segment{i}_{j}.wav', format='wav', parameters=['-ar', '16000'])
 
                 file_size = path.getsize(f'{args.audio_dir}{os.sep}segment{i}_{j}.wav')
-
+                time_s = len(audioSeg) / 1000
 
                 startTimeMS = -1 # need to find the next start time
                 endTimeMS = -1 # need to find the next end time
-                if shouldAdd(file_size, transcript, len(audioSeg)):
+                if shouldAdd(args, file_size, transcript, len(audioSeg)):
                     # and now add a line to the tsv
                     tsvOut['wav_filename'].append(f'{args.audio_dir}{os.sep}segment{i}_{j}.wav')
                     tsvOut['transcript'].append(transcript)
                     tsvOut['wav_filesize'].append(file_size)
+                    tsvOut['time'].append(time_s)
 
                 j = j + 1
                 transcript = ''
@@ -106,6 +107,7 @@ if __name__ == '__main__':
     parser.add_argument('-j', action='store', help='json trascription file input from aws', dest='jsonIn')
     parser.add_argument('-o', action='store', help='The folder to store the audio segments', dest='audio_dir', default='')
     parser.add_argument('-t', action='store', help='The file to store the deepSpeech tsv file', dest='tsvOut')
+    parser.add_argument('-m', action='store', help='max length of audio in seconds', dest='MAX_SECS', default=35)
     # I don't think we need to do this
     # parser.add_argument('--normalize', action='store_true', help='Converts diacritic characters to their base ones')
     # parser.add_argument('--filter_alphabet', help='Exclude samples with characters not in provided alphabet')
