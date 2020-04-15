@@ -72,7 +72,7 @@ def main(args):
                 # always update
                 endTimeMS = 1000*float(items[endIndex]['end_time'])
 
-            if 'end_time' not in items[endIndex]:
+            if 'end_time' not in items[endIndex] and endTimeMS != -1 and startTimeMS != -1:
                 # then we reached end of a sentence
                 # now split the audio and save it out in format for deepspeech
                 audioSeg = audio[startTimeMS:endTimeMS]
@@ -83,6 +83,7 @@ def main(args):
 
 
                 startTimeMS = -1 # need to find the next start time
+                endTimeMS = -1 # need to find the next end time
                 if shouldAdd(file_size, transcript, len(audioSeg)):
                     # and now add a line to the tsv
                     tsvOut['wav_filename'].append(f'{args.audio_dir}{os.sep}segment{i}_{j}.wav')
